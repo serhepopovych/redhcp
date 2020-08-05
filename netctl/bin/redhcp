@@ -1,0 +1,105 @@
+#!/bin/bash
+
+# Re-exec itself as given user
+NCTL_RUNAS='reconfigure'
+
+# External tool dependencies, MUST always be defined,
+# even if empty (e.g.: declare -a crt1_request_tools_list=())
+declare -a crt1_request_tools_list=(
+	'service'	# service(8)
+	'gawk'		# gawk(1)
+)
+
+# Source startup code
+. @target@/netctl/lib/bash/crt1.sh
+
+# Source functions libraries
+. @target@/netctl/lib/bash/libbool.sh
+. @target@/netctl/lib/bash/librtti.sh
+. @target@/netctl/lib/bash/libstring.sh
+. @target@/netctl/lib/bash/libfile.sh
+. @target@/netctl/lib/bash/liblog.sh
+. @target@/netctl/lib/bash/libprocess.sh
+
+# Source reconfiguration library
+. @target@/netctl/lib/bash/libreconf.sh
+
+################################################################################
+
+# Source reipset configuration
+nctl_SourceIfNotEmpty "$NCTL_PREFIX/etc/redhcp.conf"
+
+## If not specified in config, set this to default
+
+# local config
+[ -d "$REDHCP_DIR" ] || REDHCP_DIR="$NCTL_PREFIX/etc/redhcp"
+[ -d "$REDHCP_DATADIR" ] || REDHCP_DATADIR="$REDHCP_DIR/data"
+
+[ -n "$USR_XML" ] || USR_XML="$NCTL_PREFIX/etc/usr.xml"
+
+### DO NOT EDIT BELOW THIS LINE ###
+
+declare -r ethers="$REDHCP_DATADIR/etc/ethers"
+
+## Lock subsystem: prevent from running multiple instances
+nctl_subsys_lock
+nctl_check_ok 'FAIL TO RUN "%s" SUBSYSTEM EXCLUSIVELY\n' "$NCTL_SUBSYS_NAME"
+
+__restore_original_files=n
+exit_handler()
+{
+	# revert before exit on failure
+	if ! nctl_is_no "$__restore_original_files"; then
+		echo '** Restoring original configuration **'
+
+		# restore configuration files
+		nctl_restore "$ethers" ||
+			nctl_inc_rc nctl_rc
+
+		# reload service
+		sudo service "$REDHCP_SYS_SVC_NAME" reload ||
+			nctl_inc_rc nctl_rc
+	fi
+
+	# remove backups
+	nctl_cleanup "$ethers" ||
+		nctl_inc_rc nctl_rc
+
+	# Report end
+	nctl_end_msg
+
+	## Unlock subsystem
+	nctl_subsys_unlock ||
+		nctl_inc_rc nctl_rc
+
+	exit $nctl_rc
+}
+trap 'exit_handler 2>&1 |nctl_log_pipe' EXIT
+
+# Report start
+nctl_begin_msg
+
+# Make backup of the original file(s) if needed
+nctl_log_msg 'Backup original configuration\n'
+__restore_original_files=y
+nctl_backup "$ethers" 2>&1 |nctl_log_pipe
+nctl_check_ok 'ERRORS WHEN BACKUP FILES\n'
+
+# Create new ethers file
+nctl_log_msg 'Creating new ethers file\n'
+gawk \
+	-v fout="$ethers" \
+	-f "$NCTL_PREFIX/bin/ethers.awk" \
+	"$USR_XML" 2>&1 |nctl_log_pipe
+nctl_check_ok 'ERRORS WHEN CREATING NEW CONFIGURATION FILES\n'
+
+# Reload dnsmasq(8) service
+nctl_log_msg 'Reload "%s" service\n' "$REDHCP_SYS_SVC_NAME"
+{
+	echo -n "$REDHCP_SYS_SVC_NAME: "
+	sudo service "$REDHCP_SYS_SVC_NAME" reload
+} 2>&1 |nctl_log_pipe
+nctl_check_ok 'ERRORS WHEN STARTING SERVICE\n'
+__restore_original_files=n
+
+exit $nctl_rc

@@ -1,0 +1,49 @@
+#!/bin/sh -e
+
+# Requires: useradd(8), userdel(8), usermod(8)
+
+## Add reload capability for dnsmasq.service if missing (e.g. on RHEL/CentOS)
+
+if [ "$INSTALL_EUID" = 0 ]; then
+	dnsmasq_service='dnsmasq.service'
+
+	dnsmasq_lib="$ROOT/lib/systemd/system/$dnsmasq_service"
+	dnsmasq_etc="$ROOT/etc/systemd/system/$dnsmasq_service"
+
+	while :; do
+		# User unit does not exist
+		[ ! -f "$dnsmasq_etc" ] || break
+		# There is user unit directory
+		[ -d "${dnsmasq_etc%/*}" ] || break
+		# Vendor unit exist
+		[ -f "$dnsmasq_lib" ] || break
+		# Vendor unit does not have reload action
+		! grep -q 'ExecReload' "$dnsmasq_lib" || break
+
+		# Patch to add reload action
+		sed -e '/\[Install\]/iExecReload=/bin/kill -HUP $MAINPID\
+' "$dnsmasq_lib" >"$dnsmasq_etc"
+
+		# Notify systemd(1) about unit file changes
+		! type systemctl || systemctl daemon-reload
+
+		break
+	fi
+
+	unset dnsmasq_service dnsmasq_lib dnsmasq_etc
+fi
+
+## Adjust filesystem ownership and permissions
+
+[ "$INSTALL_EUID" != 0 ] && owner='' || owner="root:$RECONFIGURE_GROUP"
+
+# $DEST/netctl/etc/redhcp/
+adj_rights "$owner" 2775 \
+	"$DEST/netctl/etc/redhcp/data/usrxml" \
+	"$DEST/netctl/etc/redhcp/data/etc"
+
+adj_rights "$owner" 0664 \
+	"$DEST/netctl/etc/redhcp/data/usrxml/usr.xml" \
+	"$DEST/netctl/etc/redhcp/data/etc/ethers"
+
+return 0
