@@ -1,0 +1,5 @@
+Helper to generate /etc/ethers based on usr.xml data for dnsmasq(8)
+===================================================================
+
+See netctl/etc/redhcp/ for more information about configuration
+fragments and templates.
