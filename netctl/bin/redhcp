@@ -8,6 +8,7 @@ NCTL_RUNAS='reconfigure'
 declare -a crt1_request_tools_list=(
 	'service'	# service(8)
 	'gawk'		# gawk(1)
+	'cat'		# cat(1)
 )
 
 # Source startup code
@@ -97,7 +98,22 @@ nctl_check_ok 'ERRORS WHEN CREATING NEW CONFIGURATION FILES\n'
 nctl_log_msg 'Reload "%s" service\n' "$REDHCP_SYS_SVC_NAME"
 {
 	echo -n "$REDHCP_SYS_SVC_NAME: "
-	sudo service "$REDHCP_SYS_SVC_NAME" reload
+	for pid in \
+		'/run/dnsmasq.pid' \
+		'/run/dnsmasq/dnsmasq.pid' \
+		'/var/run/dnsmasq.pid' \
+		'/var/run/dnsmasq/dnsmasq.pid' \
+		'' \
+		#
+	do
+		if [ -r "$pid" ]; then
+			sudo /bin/kill -HUP "$(cat "$pid")"
+			break
+		fi
+	done
+	if [ -z "$pid" ]; then
+		sudo service "$REDHCP_SYS_SVC_NAME" reload
+	fi
 } 2>&1 |nctl_log_pipe
 nctl_check_ok 'ERRORS WHEN STARTING SERVICE\n'
 __restore_original_files=n

@@ -1,0 +1,3 @@
+
+# Members of reconfigure group allowed to execute following commands:
+%reconfigure	ALL = (root:root)        NOPASSWD: /bin/kill -HUP [0-9]*
