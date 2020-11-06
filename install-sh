@@ -28,7 +28,7 @@ if [ "$INSTALL_EUID" = 0 ]; then
 		! type systemctl || systemctl daemon-reload
 
 		break
-	fi
+	done
 
 	unset dnsmasq_service dnsmasq_lib dnsmasq_etc
 fi
